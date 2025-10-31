@@ -90,17 +90,14 @@ class ZividCamera : public rclcpp::Node
 public:
   ZIVID_CAMERA_ROS_PUBLIC explicit ZividCamera(const rclcpp::NodeOptions & options);
   ZIVID_CAMERA_ROS_PUBLIC ZividCamera(
-    const rclcpp::NodeOptions & options, const std::string& node_name, const std::string& ns,
-    std::shared_ptr<Zivid::Application> external_zivid,
-    std::shared_ptr<Zivid::Camera> external_camera);
+    const std::string& node_name, const std::string& ns, const rclcpp::NodeOptions & options, 
+    std::shared_ptr<Zivid::Application> application,
+    std::shared_ptr<Zivid::Camera> camera);
   ~ZividCamera() override;
   ZIVID_CAMERA_ROS_PUBLIC Zivid::Application & zividApplication();
   ZIVID_CAMERA_ROS_PUBLIC std::shared_ptr<Zivid::Camera> zividCamera();
 
 private:
-  void init_after_params_declared(bool file_camera_mode, bool update_firmware_automatically, bool is_external_camera);
-  void reinit_with_camera(bool file_camera_mode, bool update_firmware_automatically, bool is_external_camera);
-
   void onCameraConnectionKeepAliveTimeout();
   void reconnectToCameraIfNecessary();
   void setCameraStatus(CameraStatus camera_status);
@@ -198,8 +195,8 @@ private:
   image_transport::CameraPublisher color_image_publisher_;
   image_transport::CameraPublisher depth_image_publisher_;
   image_transport::CameraPublisher snr_image_publisher_;
-  rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr normals_xyz_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_publisher_;
   rclcpp::Service<zivid_interfaces::srv::CameraInfoSerialNumber>::SharedPtr
     camera_info_serial_number_service_;
   rclcpp::Service<zivid_interfaces::srv::CameraInfoModelName>::SharedPtr
