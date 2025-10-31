@@ -88,7 +88,7 @@ class ControllerInterface;
 class ZividCamera : public rclcpp::Node
 {
 public:
-  ZIVID_CAMERA_ROS_PUBLIC ZividCamera(const rclcpp::NodeOptions & options);
+  ZIVID_CAMERA_ROS_PUBLIC explicit ZividCamera(const rclcpp::NodeOptions & options);
   ZIVID_CAMERA_ROS_PUBLIC ZividCamera(
     const rclcpp::NodeOptions & options, const std::string& node_name, const std::string& ns,
     std::shared_ptr<Zivid::Application> external_zivid,
@@ -98,6 +98,9 @@ public:
   ZIVID_CAMERA_ROS_PUBLIC std::shared_ptr<Zivid::Camera> zividCamera();
 
 private:
+  void init_after_params_declared(bool file_camera_mode, bool update_firmware_automatically, bool is_external_camera);
+  void reinit_with_camera(bool file_camera_mode, bool update_firmware_automatically, bool is_external_camera);
+
   void onCameraConnectionKeepAliveTimeout();
   void reconnectToCameraIfNecessary();
   void setCameraStatus(CameraStatus camera_status);
