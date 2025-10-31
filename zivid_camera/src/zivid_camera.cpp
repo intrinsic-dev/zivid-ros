@@ -397,7 +397,7 @@ void ZividCamera::reinit_with_camera(bool file_camera_mode, bool update_firmware
   use_latched_publisher_for_snr_image_ = get_parameter("use_latched_publisher_for_snr_image").as_bool();
   use_latched_publisher_for_normals_xyz_ = get_parameter("use_latched_publisher_for_normals_xyz").as_bool();
   use_latched_publisher_for_camera_info_ = get_parameter("use_latched_publisher_for_camera_info").as_bool();
-  RCLCPP_INFO_STREAM(get_logger(), *camera_); // NOLINT(cppcoreguidelines-avoid-do-while)
+  RCLCPP_INFO_STREAM(get_logger(), *camera_); 
   // Only connect if the camera was not provided externally.
   // If it was provided externally, we assume it's already connected by the spawner.
   if (!file_camera_mode && !external_camera) {
@@ -446,7 +446,7 @@ void ZividCamera::reinit_with_camera(bool file_camera_mode, bool update_firmware
   camera_info_serial_number_service_ =
     create_service<zivid_interfaces::srv::CameraInfoSerialNumber>(
       "camera_info/serial_number",
-      std::bind(&ZividCamera::cameraInfoSerialNumberServiceHandler, this, _1, _2, _3));  // NOLINT(cppcoreguidelines-avoid-do-while)
+      std::bind(&ZividCamera::cameraInfoSerialNumberServiceHandler, this, _1, _2, _3)); 
 
   is_connected_service_ = create_service<zivid_interfaces::srv::IsConnected>(
     "is_connected", std::bind(&ZividCamera::isConnectedServiceHandler, this, _1, _2, _3));
