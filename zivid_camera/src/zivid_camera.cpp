@@ -222,40 +222,6 @@ Zivid::CameraIntrinsics cameraIntrinsicsFrom3DSettings(
   return Zivid::Experimental::Calibration::intrinsics(camera, settings);
 }
 
-Zivid::Camera findCamera(
-  Zivid::Application & zivid, rclcpp::Node & node, const std::string & serial_number)
-{
-  auto cameras = zivid.cameras();
-  RCLCPP_INFO_STREAM(node.get_logger(), cameras.size() << " camera(s) found");
-
-  if (cameras.empty()) {
-    zivid_camera::logErrorToLoggerAndThrowRuntimeException(
-      node.get_logger(), "No cameras found. Ensure that the camera is connected to your PC.");
-  }
-
-  if (!serial_number.empty()) {
-    RCLCPP_INFO(
-      node.get_logger(), "Searching for camera with serial number '%s' ...", serial_number.c_str());
-    for (auto & c : cameras) {
-      if (c.info().serialNumber() == Zivid::CameraInfo::SerialNumber(serial_number)) {
-        return c;
-      }
-    }
-    zivid_camera::logErrorToLoggerAndThrowRuntimeException(
-      node.get_logger(), "No camera found with serial number '" + serial_number + "'");
-  }
-
-  RCLCPP_INFO(node.get_logger(), "Selecting first available camera");
-  for (auto & c : cameras) {
-    if (c.state().isAvailable()) {
-      return c;
-    }
-  }
-  zivid_camera::logErrorToLoggerAndThrowRuntimeException(
-    node.get_logger(),
-    "No available cameras found! Use ZividListCameras or ZividStudio to see all connected "
-    "cameras and their status.");
-}
 }  // namespace
 
 namespace zivid_camera
@@ -280,14 +246,13 @@ ZividCamera::ZividCamera(
   intrinsics_source_name_value_map_{
     {"camera", IntrinsicsSource::Camera}, {"frame", IntrinsicsSource::Frame},
   },
-  zivid_{application},
+  zivid_{application == nullptr ? std::make_shared<Zivid::Application>(Zivid::Detail::createApplicationForWrapper(
+                                     Zivid::Detail::EnvironmentInfo::Wrapper::ros2))
+                                : application},
   camera_{camera},
   set_parameters_callback_handle_{this->add_on_set_parameters_callback(
     std::bind(&ZividCamera::setParametersCallback, this, std::placeholders::_1))}
 {
-  // Disable buffering on stdout
-  setvbuf(stdout, nullptr, _IONBF, BUFSIZ);
-
   RCLCPP_INFO_STREAM(get_logger(), "Zivid ROS driver");
   RCLCPP_INFO(get_logger(), "The node's namespace is '%s'", get_namespace());
   RCLCPP_INFO_STREAM(get_logger(), "Running Zivid Core version " << ZIVID_CORE_VERSION);
@@ -339,11 +304,45 @@ ZividCamera::ZividCamera(
       RCLCPP_INFO(get_logger(), "Creating file camera from file '%s'", file_camera_path.c_str());
       camera_ = std::make_shared<Zivid::Camera>(zivid_->createFileCamera(file_camera_path));
     } else {
-      camera_ = std::make_shared<Zivid::Camera>(findCamera(*zivid_, *this, serial_number));
+      auto cameras = zivid_->cameras();
+      RCLCPP_INFO_STREAM(get_logger(), cameras.size() << " camera(s) found");
+
+      if (cameras.empty()) {
+        logErrorAndThrowRuntimeException(
+          "No cameras found. Ensure that the camera is connected to your PC.");
+      }
+
+      if (!serial_number.empty()) {
+        RCLCPP_INFO(
+          get_logger(), "Searching for camera with serial number '%s' ...", serial_number.c_str());
+        for (auto & c : cameras) {
+          if (c.info().serialNumber() == Zivid::CameraInfo::SerialNumber(serial_number)) {
+            camera_ = std::make_shared<Zivid::Camera>(c);
+            break;
+          }
+        }
+        if (!camera_) {
+          logErrorAndThrowRuntimeException(
+            "No camera found with serial number '" + serial_number + "'");
+        }
+      } else {
+        RCLCPP_INFO(get_logger(), "Selecting first available camera");
+        for (auto & c : cameras) {
+          if (c.state().isAvailable()) {
+            camera_ = std::make_shared<Zivid::Camera>(c);
+            break;
+          }
+        }
+        if (!camera_) {
+          logErrorAndThrowRuntimeException(
+            "No available cameras found! Use ZividListCameras or ZividStudio to see all "
+            "connected cameras and their status.");
+        }
+      }
     }
   }
 
-  if (!file_camera_mode && !camera) {
+  if (!file_camera_mode) {
     RCLCPP_INFO_STREAM(
       get_logger(), "Connecting to camera '" << camera_->info().serialNumber() << "'");
     camera_->connect();
@@ -441,23 +440,10 @@ ZividCamera::ZividCamera(
   RCLCPP_INFO(get_logger(), "Zivid camera driver is now ready!");
 }
 
-namespace
-{
-std::shared_ptr<Zivid::Application> createZividApplication()
-{
-  return std::make_shared<Zivid::Application>(
-    Zivid::Detail::createApplicationForWrapper(Zivid::Detail::EnvironmentInfo::Wrapper::ros2));
-}
-}  // namespace
-
 ZividCamera::ZividCamera(const rclcpp::NodeOptions & options)
 : ZividCamera(
-    "zivid_camera", "", options, createZividApplication(),
-    std::shared_ptr<Zivid::Camera>())  // Passing nullptr for camera to be found internally
-{
-  setvbuf(stdout, nullptr, _IONBF, BUFSIZ);
-
-}
+    /*node_name=*/ "zivid_camera", /*ns=*/ "", /*options=*/ options, /*application=*/ nullptr, /*camera=*/ nullptr)
+{}
 
 ZividCamera::~ZividCamera() = default;
 
