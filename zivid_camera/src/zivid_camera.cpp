@@ -241,17 +241,17 @@ ZividCamera::ZividCamera(
   std::shared_ptr<Zivid::Camera> camera)
 : rclcpp::Node{node_name, ns, options},
   color_space_name_value_map_{
-    {"srgb", ColorSpace::sRGB}, {"linear_rgb", ColorSpace::LinearRGB},
+    {"srgb", ColorSpace::sRGB}, 
+    {"linear_rgb", ColorSpace::LinearRGB},
   },
   intrinsics_source_name_value_map_{
-    {"camera", IntrinsicsSource::Camera}, {"frame", IntrinsicsSource::Frame},
+    {"camera", IntrinsicsSource::Camera}, 
+    {"frame", IntrinsicsSource::Frame},
   },
   zivid_{application == nullptr ? std::make_shared<Zivid::Application>(Zivid::Detail::createApplicationForWrapper(
                                      Zivid::Detail::EnvironmentInfo::Wrapper::ros2))
                                 : application},
-  camera_{camera},
-  set_parameters_callback_handle_{this->add_on_set_parameters_callback(
-    std::bind(&ZividCamera::setParametersCallback, this, std::placeholders::_1))}
+  camera_{camera}
 {
   RCLCPP_INFO_STREAM(get_logger(), "Zivid ROS driver");
   RCLCPP_INFO(get_logger(), "The node's namespace is '%s'", get_namespace());
@@ -310,9 +310,7 @@ ZividCamera::ZividCamera(
       if (cameras.empty()) {
         logErrorAndThrowRuntimeException(
           "No cameras found. Ensure that the camera is connected to your PC.");
-      }
-
-      if (!serial_number.empty()) {
+      }else if (!serial_number.empty()) {
         RCLCPP_INFO(
           get_logger(), "Searching for camera with serial number '%s' ...", serial_number.c_str());
         for (auto & c : cameras) {
@@ -342,12 +340,6 @@ ZividCamera::ZividCamera(
     }
   }
 
-  if (!file_camera_mode) {
-    RCLCPP_INFO_STREAM(
-      get_logger(), "Connecting to camera '" << camera_->info().serialNumber() << "'");
-    camera_->connect();
-  }
-
   if (!Zivid::Firmware::isUpToDate(*camera_)) {
     if (update_firmware_automatically) {
       RCLCPP_INFO(
@@ -368,6 +360,11 @@ ZividCamera::ZividCamera(
   }
 
   RCLCPP_INFO_STREAM(get_logger(), *camera_);
+  if (!file_camera_mode) {
+    RCLCPP_INFO_STREAM(
+      get_logger(), "Connecting to camera '" << camera_->info().serialNumber() << "'");
+    camera_->connect();
+  }
   RCLCPP_INFO_STREAM(
     get_logger(), "Connected to camera '" << camera_->info().serialNumber() << "'");
   setCameraStatus(CameraStatus::Connected);
@@ -376,6 +373,10 @@ ZividCamera::ZividCamera(
     this, get_clock(), std::chrono::seconds(10),
     std::bind(&ZividCamera::onCameraConnectionKeepAliveTimeout, this));
 
+  // Set up the initial timer based on the fps parameter.
+  declare_parameter<double>("fps", 0.0);
+  onCaptureTimer(this->get_parameter("fps").as_double());
+  
   RCLCPP_INFO(get_logger(), "Advertising topics");
 
   points_xyz_publisher_ = create_publisher<sensor_msgs::msg::PointCloud2>(
@@ -437,6 +438,10 @@ ZividCamera::ZividCamera(
   projection_controller_ = std::make_unique<ProjectionController>(
     *this, *camera_, *settings_2d_controller_, ControllerInterface{*this});
 
+  // The callback must be registered after the controllers and parameters are initialized.
+  set_parameters_callback_handle_ = this->add_on_set_parameters_callback(
+    std::bind(&ZividCamera::setParametersCallback, this, std::placeholders::_1));
+
   RCLCPP_INFO(get_logger(), "Zivid camera driver is now ready!");
 }
 
@@ -459,7 +464,33 @@ void ZividCamera::onCameraConnectionKeepAliveTimeout()
   }
 }
 
-std::shared_ptr<Zivid::Camera> ZividCamera::zividCamera() { return camera_; }
+void ZividCamera::onCaptureTimer(double fps)
+{ 
+  RCLCPP_INFO_STREAM(get_logger(), "FPS parameter is set to " << fps);
+
+  // Always stop the existing timer if it's running before potentially starting a new one.
+  if (capture_timer_) {
+    RCLCPP_INFO(get_logger(), "Stopping current continuous capture before (re)starting.");
+    capture_timer_->cancel();
+    capture_timer_.reset();
+  }
+
+  if (fps > 0.0) {
+    const auto period = std::chrono::duration<double>(1.0 / fps);
+    RCLCPP_INFO(get_logger(), "Starting continuous capture with a period of %.3f s (%.1f Hz)", period.count(),
+                fps);
+    capture_timer_ = rclcpp::create_timer(this, get_clock(), period, [this]() {
+      try {
+        const auto settings = settings_controller_->currentSettings();
+        invokeCaptureAndPublishFrame(settings);
+      } catch (const std::exception & e) {
+        RCLCPP_ERROR_STREAM(get_logger(), "Exception in capture timer: " << e.what());
+      }
+    });
+  } else { // fps <= 0.0
+    RCLCPP_INFO(get_logger(), "Continuous capture is disabled (fps <= 0.0).");
+  }
+}
 
 void ZividCamera::reconnectToCameraIfNecessary()
 {
@@ -507,7 +538,7 @@ rcl_interfaces::msg::SetParametersResult ZividCamera::setParametersCallback(
   rcl_interfaces::msg::SetParametersResult result;
   result.successful = true;
   for (const auto & param : parameters) {
-    RCLCPP_DEBUG_STREAM(
+    RCLCPP_INFO_STREAM(
       get_logger(), "Set parameter '" << param.get_name() << "' (" << param.get_type_name()
                                       << ") to '" << param.value_to_string() << "'");
     if (settings_controller_) {
@@ -515,6 +546,9 @@ rcl_interfaces::msg::SetParametersResult ZividCamera::setParametersCallback(
     }
     if (settings_2d_controller_) {
       settings_2d_controller_->onSetParameter(param.get_name());
+    }
+    if (param.get_name() == "fps") {
+      onCaptureTimer(param.as_double());
     }
   }
   return result;
