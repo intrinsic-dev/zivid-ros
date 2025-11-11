@@ -248,12 +248,12 @@ ZividCamera::ZividCamera(
     {"camera", IntrinsicsSource::Camera}, 
     {"frame", IntrinsicsSource::Frame},
   },
-  set_parameters_callback_handle_{this->add_on_set_parameters_callback(
-    std::bind(&ZividCamera::setParametersCallback, this, std::placeholders::_1))},
   zivid_{application == nullptr ? std::make_shared<Zivid::Application>(Zivid::Detail::createApplicationForWrapper(
                                      Zivid::Detail::EnvironmentInfo::Wrapper::ros2))
                                 : application},
-  camera_{camera}
+  camera_{camera},
+  set_parameters_callback_handle_{this->add_on_set_parameters_callback(
+    std::bind(&ZividCamera::setParametersCallback, this, std::placeholders::_1))}
 {
   // Disable buffering on stdout
   setvbuf(stdout, nullptr, _IONBF, BUFSIZ);
