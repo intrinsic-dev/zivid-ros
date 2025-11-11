@@ -241,18 +241,23 @@ ZividCamera::ZividCamera(
   std::shared_ptr<Zivid::Camera> camera)
 : rclcpp::Node{node_name, ns, options},
   color_space_name_value_map_{
-    {"srgb", ColorSpace::sRGB}, 
-    {"linear_rgb", ColorSpace::LinearRGB},
+    {"srgb", zivid_camera::ColorSpace::sRGB},
+    {"linear_rgb", zivid_camera::ColorSpace::LinearRGB},
   },
   intrinsics_source_name_value_map_{
     {"camera", IntrinsicsSource::Camera}, 
     {"frame", IntrinsicsSource::Frame},
   },
+  set_parameters_callback_handle_{this->add_on_set_parameters_callback(
+    std::bind(&ZividCamera::setParametersCallback, this, std::placeholders::_1))},
   zivid_{application == nullptr ? std::make_shared<Zivid::Application>(Zivid::Detail::createApplicationForWrapper(
                                      Zivid::Detail::EnvironmentInfo::Wrapper::ros2))
                                 : application},
   camera_{camera}
 {
+  // Disable buffering on stdout
+  setvbuf(stdout, nullptr, _IONBF, BUFSIZ);
+
   RCLCPP_INFO_STREAM(get_logger(), "Zivid ROS driver");
   RCLCPP_INFO(get_logger(), "The node's namespace is '%s'", get_namespace());
   RCLCPP_INFO_STREAM(get_logger(), "Running Zivid Core version " << ZIVID_CORE_VERSION);
@@ -303,40 +308,38 @@ ZividCamera::ZividCamera(
     if (file_camera_mode) {
       RCLCPP_INFO(get_logger(), "Creating file camera from file '%s'", file_camera_path.c_str());
       camera_ = std::make_shared<Zivid::Camera>(zivid_->createFileCamera(file_camera_path));
-    } else {
-      auto cameras = zivid_->cameras();
-      RCLCPP_INFO_STREAM(get_logger(), cameras.size() << " camera(s) found");
+    }
+    auto cameras = zivid_->cameras();
+    RCLCPP_INFO_STREAM(get_logger(), cameras.size() << " camera(s) found");
 
-      if (cameras.empty()) {
-        logErrorAndThrowRuntimeException(
-          "No cameras found. Ensure that the camera is connected to your PC.");
-      }else if (!serial_number.empty()) {
-        RCLCPP_INFO(
-          get_logger(), "Searching for camera with serial number '%s' ...", serial_number.c_str());
-        for (auto & c : cameras) {
-          if (c.info().serialNumber() == Zivid::CameraInfo::SerialNumber(serial_number)) {
-            camera_ = std::make_shared<Zivid::Camera>(c);
-            break;
-          }
-        }
-        if (!camera_) {
-          logErrorAndThrowRuntimeException(
-            "No camera found with serial number '" + serial_number + "'");
-        }
-      } else {
-        RCLCPP_INFO(get_logger(), "Selecting first available camera");
-        for (auto & c : cameras) {
-          if (c.state().isAvailable()) {
-            camera_ = std::make_shared<Zivid::Camera>(c);
-            break;
-          }
-        }
-        if (!camera_) {
-          logErrorAndThrowRuntimeException(
-            "No available cameras found! Use ZividListCameras or ZividStudio to see all "
-            "connected cameras and their status.");
+    if (cameras.empty()) {
+      logErrorAndThrowRuntimeException(
+        "No cameras found. Ensure that the camera is connected to your PC.");
+    } else if (!serial_number.empty()) {
+      RCLCPP_INFO(
+        get_logger(), "Searching for camera with serial number '%s' ...", serial_number.c_str());
+      for (auto & c : cameras) {
+        if (c.info().serialNumber() == Zivid::CameraInfo::SerialNumber(serial_number)) {
+          camera_ = std::make_shared<Zivid::Camera>(c);
+          break;
         }
       }
+      if (!camera_) {
+        logErrorAndThrowRuntimeException(
+          "No camera found with serial number '" + serial_number + "'");
+      }
+    } 
+    RCLCPP_INFO(get_logger(), "Selecting first available camera");
+    for (auto & c : cameras) {
+      if (c.state().isAvailable()) {
+        camera_ = std::make_shared<Zivid::Camera>(c);
+        break;
+      }
+    }
+    if (!camera_) {
+      logErrorAndThrowRuntimeException(
+        "No available cameras found! Use ZividListCameras or ZividStudio to see all "
+        "connected cameras and their status.");
     }
   }
 
@@ -384,6 +387,9 @@ ZividCamera::ZividCamera(
   normals_xyz_publisher_ = create_publisher<sensor_msgs::msg::PointCloud2>(
     "normals/xyz", getQoSLatched(use_latched_publisher_for_normals_xyz_));
 
+  camera_info_publisher_ = create_publisher<sensor_msgs::msg::CameraInfo>(
+    "camera_info", getQoSLatched(use_latched_publisher_for_camera_info_));
+        
   color_image_publisher_ = image_transport::create_camera_publisher(
     this, "color/image_color",
     getQoSLatched(use_latched_publisher_for_color_image_).get_rmw_qos_profile());
@@ -392,8 +398,6 @@ ZividCamera::ZividCamera(
     getQoSLatched(use_latched_publisher_for_depth_image_).get_rmw_qos_profile());
   snr_image_publisher_ = image_transport::create_camera_publisher(
     this, "snr/image", getQoSLatched(use_latched_publisher_for_snr_image_).get_rmw_qos_profile());
-  camera_info_publisher_ = create_publisher<sensor_msgs::msg::CameraInfo>(
-    "camera_info", getQoSLatched(use_latched_publisher_for_camera_info_));
 
   RCLCPP_INFO(get_logger(), "Advertising services");
 
@@ -434,10 +438,6 @@ ZividCamera::ZividCamera(
   projection_controller_ = std::make_unique<ProjectionController>(
     *this, *camera_, *settings_2d_controller_, ControllerInterface{*this});
 
-  // The callback must be registered after the controllers and parameters are initialized.
-  set_parameters_callback_handle_ = this->add_on_set_parameters_callback(
-    std::bind(&ZividCamera::setParametersCallback, this, std::placeholders::_1));
-
   RCLCPP_INFO(get_logger(), "Zivid camera driver is now ready!");
 }
 
@@ -459,7 +459,6 @@ void ZividCamera::onCameraConnectionKeepAliveTimeout()
     RCLCPP_INFO(get_logger(), "%s failed with exception '%s'", __func__, e.what());
   }
 }
-
 
 void ZividCamera::reconnectToCameraIfNecessary()
 {
@@ -507,7 +506,7 @@ rcl_interfaces::msg::SetParametersResult ZividCamera::setParametersCallback(
   rcl_interfaces::msg::SetParametersResult result;
   result.successful = true;
   for (const auto & param : parameters) {
-    RCLCPP_INFO_STREAM(
+    RCLCPP_DEBUG_STREAM(
       get_logger(), "Set parameter '" << param.get_name() << "' (" << param.get_type_name()
                                       << ") to '" << param.value_to_string() << "'");
     if (settings_controller_) {
@@ -702,8 +701,6 @@ void ZividCamera::publishFrame(const Zivid::Frame & frame)
 
       const auto camera_info =
         makeCameraInfo(header, point_cloud.width(), point_cloud.height(), intrinsics);
-      RCLCPP_INFO_STREAM(get_logger(), "Publishing " << camera_info_publisher_->get_topic_name());
-
 
       if (camera_info_publisher_->get_subscription_count() > 0 || use_latched_publisher_for_camera_info_)
       {
