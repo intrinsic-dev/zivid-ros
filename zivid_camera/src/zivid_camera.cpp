@@ -304,10 +304,10 @@ ZividCamera::ZividCamera(
   const bool update_firmware_automatically =
     declare_parameter<bool>("update_firmware_automatically", true);
 
-  if (!camera_) {
+  auto create_camera = [&]() {
     if (file_camera_mode) {
       RCLCPP_INFO(get_logger(), "Creating file camera from file '%s'", file_camera_path.c_str());
-      camera_ = std::make_shared<Zivid::Camera>(zivid_->createFileCamera(file_camera_path));
+      return zivid_->createFileCamera(file_camera_path);
     }
     auto cameras = zivid_->cameras();
     RCLCPP_INFO_STREAM(get_logger(), cameras.size() << " camera(s) found");
@@ -320,27 +320,24 @@ ZividCamera::ZividCamera(
         get_logger(), "Searching for camera with serial number '%s' ...", serial_number.c_str());
       for (auto & c : cameras) {
         if (c.info().serialNumber() == Zivid::CameraInfo::SerialNumber(serial_number)) {
-          camera_ = std::make_shared<Zivid::Camera>(c);
-          break;
+          return c;
         }
       }
-      if (!camera_) {
-        logErrorAndThrowRuntimeException(
-          "No camera found with serial number '" + serial_number + "'");
-      }
-    } 
+      logErrorAndThrowRuntimeException(
+        "No camera found with serial number '" + serial_number + "'");
+    }
     RCLCPP_INFO(get_logger(), "Selecting first available camera");
     for (auto & c : cameras) {
       if (c.state().isAvailable()) {
-        camera_ = std::make_shared<Zivid::Camera>(c);
-        break;
+        return c;
       }
     }
-    if (!camera_) {
-      logErrorAndThrowRuntimeException(
-        "No available cameras found! Use ZividListCameras or ZividStudio to see all "
-        "connected cameras and their status.");
-    }
+    logErrorAndThrowRuntimeException(
+      "No available cameras found! Use ZividListCameras or ZividStudio to see all connected "
+      "cameras and their status.");
+  };
+  if (camera_ == nullptr) {
+    camera_ = std::make_shared<Zivid::Camera>(create_camera());
   }
 
   if (!Zivid::Firmware::isUpToDate(*camera_)) {
