@@ -140,6 +140,7 @@ private:
   bool shouldPublishDepthImg() const;
   bool shouldPublishSnrImg() const;
   bool shouldPublishNormalsXYZ() const;
+  bool shouldPublishCameraInfo() const;
   std_msgs::msg::Header makeHeader();
   void publishPointCloudXYZ(
     const std_msgs::msg::Header & header, const Zivid::PointCloud & point_cloud);

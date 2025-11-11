@@ -245,8 +245,8 @@ ZividCamera::ZividCamera(
     {"linear_rgb", zivid_camera::ColorSpace::LinearRGB},
   },
   intrinsics_source_name_value_map_{
-    {"camera", IntrinsicsSource::Camera}, 
-    {"frame", IntrinsicsSource::Frame},
+    {"camera", zivid_camera::IntrinsicsSource::Camera},
+    {"frame", zivid_camera::IntrinsicsSource::Frame},
   },
   zivid_{application == nullptr ? std::make_shared<Zivid::Application>(Zivid::Detail::createApplicationForWrapper(
                                      Zivid::Detail::EnvironmentInfo::Wrapper::ros2))
@@ -660,10 +660,11 @@ void ZividCamera::publishFrame(const Zivid::Frame & frame)
   const bool publish_depth_img = shouldPublishDepthImg();
   const bool publish_snr_img = shouldPublishSnrImg();
   const bool publish_normals_xyz = shouldPublishNormalsXYZ();
+  const bool publish_camera_info = shouldPublishCameraInfo();
 
   if (
     publish_points_xyz || publish_points_xyzrgba || publish_color_img || publish_depth_img ||
-    publish_snr_img || publish_normals_xyz) {
+    publish_snr_img || publish_normals_xyz || publish_camera_info) {
     const auto color_space = colorSpace();
     const auto header = makeHeader();
     auto point_cloud = frame.pointCloud();
@@ -699,7 +700,7 @@ void ZividCamera::publishFrame(const Zivid::Frame & frame)
       const auto camera_info =
         makeCameraInfo(header, point_cloud.width(), point_cloud.height(), intrinsics);
 
-      if (camera_info_publisher_->get_subscription_count() > 0 || use_latched_publisher_for_camera_info_)
+      if (publish_camera_info)
       {
         camera_info_publisher_->publish(*camera_info);
       }
@@ -782,6 +783,12 @@ bool ZividCamera::shouldPublishNormalsXYZ() const
 {
   return normals_xyz_publisher_->get_subscription_count() > 0 ||
          use_latched_publisher_for_normals_xyz_;
+}
+
+bool ZividCamera::shouldPublishCameraInfo() const
+{
+  return camera_info_publisher_->get_subscription_count() > 0 ||
+         use_latched_publisher_for_camera_info_;
 }
 
 std_msgs::msg::Header ZividCamera::makeHeader()
