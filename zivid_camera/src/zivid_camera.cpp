@@ -700,11 +700,9 @@ void ZividCamera::publishFrame(const Zivid::Frame & frame)
       const auto camera_info =
         makeCameraInfo(header, point_cloud.width(), point_cloud.height(), intrinsics);
 
-      if (publish_camera_info)
-      {
+      if (publish_camera_info) {
         camera_info_publisher_->publish(*camera_info);
       }
-
       if (publish_color_img) {
         publishColorImage(header, camera_info, point_cloud, color_space);
       }
