@@ -100,7 +100,6 @@ private:
   void onCameraConnectionKeepAliveTimeout();
   void reconnectToCameraIfNecessary();
   void setCameraStatus(CameraStatus camera_status);
-  void onCaptureTimer(double fps);
   rcl_interfaces::msg::SetParametersResult setParametersCallback(
     const std::vector<rclcpp::Parameter> & parameters);
   void cameraInfoModelNameServiceHandler(
@@ -182,7 +181,6 @@ private:
 
   std::map<std::string, ColorSpace> color_space_name_value_map_;
   std::map<std::string, IntrinsicsSource> intrinsics_source_name_value_map_;
-  rclcpp::TimerBase::SharedPtr capture_timer_;
   rclcpp::TimerBase::SharedPtr camera_connection_keepalive_timer_;
   bool use_latched_publisher_for_points_xyz_{false};
   bool use_latched_publisher_for_points_xyzrgba_{false};
@@ -222,7 +220,6 @@ private:
   // both controllers. Otherwise, the callback could run before the controllers are initialized,
   // which is undefined behavior.
   OnSetParametersCallbackHandle::SharedPtr set_parameters_callback_handle_;
-  rclcpp::Parameter fps_param_;
   std::shared_ptr<Zivid::Camera> camera_;
   std::string frame_id_;
 };

@@ -373,10 +373,6 @@ ZividCamera::ZividCamera(
     this, get_clock(), std::chrono::seconds(10),
     std::bind(&ZividCamera::onCameraConnectionKeepAliveTimeout, this));
 
-  // Set up the initial timer based on the fps parameter.
-  declare_parameter<double>("fps", 0.0);
-  onCaptureTimer(this->get_parameter("fps").as_double());
-  
   RCLCPP_INFO(get_logger(), "Advertising topics");
 
   points_xyz_publisher_ = create_publisher<sensor_msgs::msg::PointCloud2>(
@@ -464,33 +460,6 @@ void ZividCamera::onCameraConnectionKeepAliveTimeout()
   }
 }
 
-void ZividCamera::onCaptureTimer(double fps)
-{ 
-  RCLCPP_INFO_STREAM(get_logger(), "FPS parameter is set to " << fps);
-
-  // Always stop the existing timer if it's running before potentially starting a new one.
-  if (capture_timer_) {
-    RCLCPP_INFO(get_logger(), "Stopping current continuous capture before (re)starting.");
-    capture_timer_->cancel();
-    capture_timer_.reset();
-  }
-
-  if (fps > 0.0) {
-    const auto period = std::chrono::duration<double>(1.0 / fps);
-    RCLCPP_INFO(get_logger(), "Starting continuous capture with a period of %.3f s (%.1f Hz)", period.count(),
-                fps);
-    capture_timer_ = rclcpp::create_timer(this, get_clock(), period, [this]() {
-      try {
-        const auto settings = settings_controller_->currentSettings();
-        invokeCaptureAndPublishFrame(settings);
-      } catch (const std::exception & e) {
-        RCLCPP_ERROR_STREAM(get_logger(), "Exception in capture timer: " << e.what());
-      }
-    });
-  } else { // fps <= 0.0
-    RCLCPP_INFO(get_logger(), "Continuous capture is disabled (fps <= 0.0).");
-  }
-}
 
 void ZividCamera::reconnectToCameraIfNecessary()
 {
@@ -546,9 +515,6 @@ rcl_interfaces::msg::SetParametersResult ZividCamera::setParametersCallback(
     }
     if (settings_2d_controller_) {
       settings_2d_controller_->onSetParameter(param.get_name());
-    }
-    if (param.get_name() == "fps") {
-      onCaptureTimer(param.as_double());
     }
   }
   return result;
