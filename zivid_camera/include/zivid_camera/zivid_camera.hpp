@@ -91,8 +91,7 @@ public:
   ZIVID_CAMERA_ROS_PUBLIC explicit ZividCamera(const rclcpp::NodeOptions & options);
   ZIVID_CAMERA_ROS_PUBLIC ZividCamera(
     const std::string& node_name, const std::string& ns, const rclcpp::NodeOptions & options, 
-    std::shared_ptr<Zivid::Application> application,
-    std::shared_ptr<Zivid::Camera> camera);
+    std::shared_ptr<Zivid::Application> application);
   ~ZividCamera() override;
   ZIVID_CAMERA_ROS_PUBLIC Zivid::Application & zividApplication();
 

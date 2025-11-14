@@ -237,8 +237,7 @@ constexpr auto intrinsics_source = "intrinsics_source";
 
 ZividCamera::ZividCamera(
   const std::string& node_name, const std::string& ns, const rclcpp::NodeOptions & options,
-  std::shared_ptr<Zivid::Application> application,
-  std::shared_ptr<Zivid::Camera> camera)
+  std::shared_ptr<Zivid::Application> application)
 : rclcpp::Node{node_name, ns, options},
   color_space_name_value_map_{
     {"srgb", zivid_camera::ColorSpace::sRGB},
@@ -251,7 +250,6 @@ ZividCamera::ZividCamera(
   zivid_{application == nullptr ? std::make_shared<Zivid::Application>(Zivid::Detail::createApplicationForWrapper(
                                      Zivid::Detail::EnvironmentInfo::Wrapper::ros2))
                                 : application},
-  camera_{camera},
   set_parameters_callback_handle_{this->add_on_set_parameters_callback(
     std::bind(&ZividCamera::setParametersCallback, this, std::placeholders::_1))}
 {
@@ -304,7 +302,7 @@ ZividCamera::ZividCamera(
   const bool update_firmware_automatically =
     declare_parameter<bool>("update_firmware_automatically", true);
 
-  auto create_camera = [&]() {
+  camera_ = std::make_unique<Zivid::Camera>([&]() {
     if (file_camera_mode) {
       RCLCPP_INFO(get_logger(), "Creating file camera from file '%s'", file_camera_path.c_str());
       return zivid_->createFileCamera(file_camera_path);
@@ -335,10 +333,7 @@ ZividCamera::ZividCamera(
     logErrorAndThrowRuntimeException(
       "No available cameras found! Use ZividListCameras or ZividStudio to see all connected "
       "cameras and their status.");
-  };
-  if (camera_ == nullptr) {
-    camera_ = std::make_shared<Zivid::Camera>(create_camera());
-  }
+  }());
 
   if (!Zivid::Firmware::isUpToDate(*camera_)) {
     if (update_firmware_automatically) {
@@ -440,7 +435,7 @@ ZividCamera::ZividCamera(
 
 ZividCamera::ZividCamera(const rclcpp::NodeOptions & options)
 : ZividCamera(
-    /*node_name=*/ "zivid_camera", /*ns=*/ "", /*options=*/ options, /*application=*/ nullptr, /*camera=*/ nullptr)
+    /*node_name=*/ "zivid_camera", /*ns=*/ "", /*options=*/ options, /*application=*/ nullptr)
 {}
 
 ZividCamera::~ZividCamera() = default;
