@@ -220,7 +220,7 @@ private:
   // both controllers. Otherwise, the callback could run before the controllers are initialized,
   // which is undefined behavior.
   OnSetParametersCallbackHandle::SharedPtr set_parameters_callback_handle_;
-  std::shared_ptr<Zivid::Camera> camera_;
+  std::unique_ptr<Zivid::Camera> camera_;
   std::string frame_id_;
 };
 }  // namespace zivid_camera
